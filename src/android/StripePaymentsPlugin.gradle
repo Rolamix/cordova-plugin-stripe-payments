@@ -1,0 +1,27 @@
+dependencies {
+   implementation 'com.stripe:stripe-android:8.5.0'
+   compile 'com.google.android.gms:play-services-wallet:16.0.1'
+
+   /* Cordova doesn't support AndroidX support libraries yet */
+   compile 'com.android.support:support-v4:28.0.0'
+   compile 'com.android.support:appcompat-v7:28.0.0'
+
+   /* Needed for RxAndroid */
+   implementation 'io.reactivex:rxandroid:1.2.1'
+   implementation 'io.reactivex:rxjava:1.3.0'
+
+   /* Needed for Rx Bindings on views */
+   implementation 'com.jakewharton.rxbinding:rxbinding:0.4.0'
+
+   /* Used for server calls */
+   implementation 'com.squareup.okio:okio:1.15.0'
+   implementation 'com.squareup.retrofit2:retrofit:2.5.0'
+
+   /* Used to make Retrofit easier and GSON & Rx-compatible*/
+   implementation 'com.google.code.gson:gson:2.8.5'
+   implementation 'com.squareup.retrofit2:adapter-rxjava:2.3.0'
+   implementation 'com.squareup.retrofit2:converter-gson:2.5.0'
+
+   /* Used to debug your Retrofit connections */
+   implementation 'com.squareup.okhttp3:logging-interceptor:3.12.0'
+}

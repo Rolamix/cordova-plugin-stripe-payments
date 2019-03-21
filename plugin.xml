@@ -7,9 +7,10 @@
 
     <name>Stripe Payments</name>
     <description>Cordova plugin for Stripe payments using the native Android/iOS SDKs. Supports Apple Pay and card payments.</description>
-    <repo>https://github.com/rolamix/cordova-plugin-stripe-payments</repo>
+    <author>Rolamix, Inc.</author>
     <license>MIT</license>
-    <keywords>cordova,stripe,payments,apple pay,credit cards,checkout</keywords>
+    <keywords>cordova,stripe,payments,apple pay,ach,google pay,cards,credit cards,checkout</keywords>
+    <repo>https://github.com/rolamix/cordova-plugin-stripe-payments</repo>
     <issue>https://github.com/rolamix/cordova-plugin-stripe-payments/issues</issue>
 
     <engines>
@@ -30,6 +31,10 @@
 
     <!-- Android -->
     <platform name="android">
+      <config-file parent="/*/application" target="AndroidManifest.xml">
+              <meta-data android:name="com.google.android.gms.wallet.api.enabled" android:value="true" />
+      </config-file>
+
       <config-file target="res/xml/config.xml" parent="/*">
         <feature name="StripePaymentsPlugin">
           <param name="android-package" value="com.rolamix.plugins.stripe.StripePaymentsPlugin"/>
