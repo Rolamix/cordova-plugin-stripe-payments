@@ -1,0 +1,36 @@
+{
+  "name": "cordova-plugin-stripe-payments",
+  "description": "Stripe Card Entry plugin for Cordova. Available for Android and iOS.",
+  "version": "0.0.5",
+  "homepage": "https://github.com/rolamix/cordova-plugin-stripe-payments#readme",
+  "author": "Rolamix <contact@rolamix.com> (https://rolamix.com)",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/rolamix/cordova-plugin-stripe-payments.git"
+  },
+  "bugs": {
+    "url": "https://github.com/rolamix/cordova-plugin-stripe-payments/issues"
+  },
+  "cordova": {
+    "id": "cordova-plugin-stripe-payments",
+    "platforms": [
+      "android",
+      "ios"
+    ]
+  },
+  "keywords": [
+    "cordova",
+    "phonegap",
+    "swift",
+    "cordova-ios",
+    "cordova-android",
+    "stripe",
+    "stripe payments",
+    "card",
+    "apple pay",
+    "google pay",
+    "ach",
+    "credit card"
+  ]
+}

@@ -1,0 +1,73 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<plugin xmlns="http://apache.org/cordova/ns/plugins/1.0"
+    xmlns:android="http://schemas.android.com/apk/res/android"
+    id="cordova-plugin-stripe-payments"
+    version="0.0.5">
+
+    <name>Stripe Payments</name>
+    <description>Cordova plugin for Stripe payments using the native Android/iOS SDKs. Supports Apple Pay and card payments.</description>
+    <repo>https://github.com/rolamix/cordova-plugin-stripe-payments</repo>
+    <license>MIT</license>
+    <keywords>cordova,stripe,payments,apple pay,credit cards,checkout</keywords>
+    <issue>https://github.com/rolamix/cordova-plugin-stripe-payments/issues</issue>
+
+    <engines>
+      <engine name="cordova" version=">=7.1.0"/>
+      <engine name="cordova-android" version=">=7.1.0"/>
+      <!-- If installing on Cordova IOS 5.0, make sure to add
+      <preference name="SwiftVersion" value="4.1" />
+      to your config.xml under the ios platform section.
+      If installing on Cordova iOS < 5.0, you need to add cordova-plugin-add-swift-support
+      to your project and specify <preference name="UseSwiftLanguageVersion" value="4" />
+      in your config.xml file under the ios platform section. -->
+      <engine name="cordova-ios" version=">=4.5.0"/>
+    </engines>
+
+    <js-module src="www/StripePaymentsPlugin.js" name="StripePaymentsPlugin">
+      <clobbers target="window.plugins.StripePaymentsPlugin" />
+    </js-module>
+
+    <!-- Android -->
+    <platform name="android">
+      <config-file target="res/xml/config.xml" parent="/*">
+        <feature name="StripePaymentsPlugin">
+          <param name="android-package" value="com.rolamix.plugins.stripe.StripePaymentsPlugin"/>
+        </feature>
+      </config-file>
+
+      <source-file src="src/android/StripePaymentsPlugin.java" target-dir="src/com/rolamix/plugins/stripe/" />
+      <framework src="src/android/StripePaymentsPlugin.gradle" custom="true" type="gradleReference" />
+    </platform>
+
+
+    <!-- iOS -->
+    <platform name="ios">
+      <config-file target="config.xml" parent="/*">
+        <feature name="StripePaymentsPlugin">
+          <param name="ios-package" value="StripePaymentsPlugin"/>
+        </feature>
+      </config-file>
+
+      <framework src="Stripe" type="podspec" spec="~> 15.0.0" />
+      <framework src="Alamofire" type="podspec" spec="~> 5.0.0-beta.3" />
+      <!-- https://github.com/cordova-develop/cordova-plugin-pods3/blob/master/plugin.xml -->
+      <!-- <pods use-frameworks="true">
+        <pod name="Stripe" spec="" />
+        <pod name="Alamofire" spec="" />
+      </pods> -->
+
+      <source-file src="src/ios/APIClient.swift" />
+      <source-file src="src/ios/AppDelegate.swift" />
+      <source-file src="src/ios/PaymentOptions.swift" />
+      <source-file src="src/ios/PluginConfig.swift" />
+      <source-file src="src/ios/StripePaymentsPlugin.swift" />
+      <header-file type="BridgingHeader" src="src/ios/StripePaymentsPlugin-Bridging-Header.h" />
+
+      <!-- <framework src="Foundation.framework" /> -->
+    </platform>
+</plugin>
+
+
+
+
