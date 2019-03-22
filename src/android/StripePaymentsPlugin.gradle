@@ -3,8 +3,8 @@ dependencies {
    compile 'com.google.android.gms:play-services-wallet:16.0.1'
 
    /* Cordova doesn't support AndroidX support libraries yet */
-   compile 'com.android.support:support-v4:28.0.0'
-   compile 'com.android.support:appcompat-v7:28.0.0'
+   compile 'com.android.support:support-v4:28.+'
+   compile 'com.android.support:appcompat-v7:28.+'
 
    /* Needed for RxAndroid */
    implementation 'io.reactivex:rxandroid:1.2.1'
