@@ -12,9 +12,9 @@ import Stripe
 
 @objc(StripePaymentsPlugin) class StripePaymentsPlugin: CDVPlugin, STPPaymentContextDelegate {
 
-    private var paymentStatusCallback: String? = nil
-    private let customerContext: STPCustomerContext
-    private let paymentContext: STPPaymentContext
+    private var paymentStatusCallback: String = ""
+    private var customerContext: STPCustomerContext!
+    private var paymentContext: STPPaymentContext!
 
     override func pluginInitialize() {
         super.pluginInitialize()
@@ -27,8 +27,8 @@ import Stripe
 
     // MARK: Init Method
 
-    @objc(init:)
-    public func init(command: CDVInvokedUrlCommand) {
+    @objc(beginStripe:)
+    public func beginStripe(command: CDVInvokedUrlCommand) {
         let error = "The Stripe Publishable Key and ephemeral key generation URL are required"
 
         guard let dict = command.arguments[0] as? [String:Any] ?? nil else {
@@ -43,10 +43,10 @@ import Stripe
         PluginConfig.ephemeralKeyUrl = dict["ephemeralKeyUrl"] as? String ?? ""
         PluginConfig.appleMerchantId = dict["appleMerchantId"] as? String ?? ""
         PluginConfig.companyName = dict["companyName"] as? String ?? ""
-        PluginConfig.requestPaymentImmediately = dict["requestPaymentImmediately"] as? Boolean ?? true
+        PluginConfig.requestPaymentImmediately = dict["requestPaymentImmediately"] as? Bool ?? true
 
-        if headersDict = dict["extraHTTPHeaders"] as? [String:String] {
-            PluginConfig.parseExtraHeaders(headersDict)
+        if let headersDict = dict["extraHTTPHeaders"] as? [String:String] {
+            PluginConfig.parseExtraHeaders(dict: headersDict)
         }
 
         if !self.verifyConfig() {
@@ -54,7 +54,7 @@ import Stripe
             return
         }
 
-        APIClient.shared.ephemeralKeyUrl = PluginConfig.ephemeralKeyUrl
+        StripeAPIClient.shared.ephemeralKeyUrl = PluginConfig.ephemeralKeyUrl
         STPPaymentConfiguration.shared().companyName = PluginConfig.companyName
         STPPaymentConfiguration.shared().publishableKey = PluginConfig.publishableKey
 
@@ -62,7 +62,7 @@ import Stripe
             STPPaymentConfiguration.shared().appleMerchantIdentifier = PluginConfig.appleMerchantId
         }
 
-        customerContext = STPCustomerContext(keyProvider: APIClient.shared)
+        customerContext = STPCustomerContext(keyProvider: StripeAPIClient.shared)
         paymentContext = STPPaymentContext(customerContext: customerContext)
 
         paymentContext.delegate = self
@@ -90,10 +90,16 @@ import Stripe
             return
         }
 
-        let paymentOptions = PaymentOptions(options)
+        let paymentOptions = PaymentOptions(dict: options)
         paymentContext.paymentAmount = paymentOptions.price
         paymentContext.paymentCurrency = paymentOptions.currency
         paymentContext.paymentCountry = paymentOptions.country
+
+        // Allow these to be overridden
+        PluginConfig.requestPaymentImmediately = options["requestPaymentImmediately"] as? Bool ?? PluginConfig.requestPaymentImmediately
+        if let headersDict = options["extraHTTPHeaders"] as? [String:String] {
+            PluginConfig.parseExtraHeaders(dict: headersDict)
+        }
 
         // This dialog collects a payment method from the user. When they close it, you get a context
         // change event with the payment info. NO charge has been created at that point, NO source
@@ -101,7 +107,7 @@ import Stripe
         // payment data and clicked 'ok'. That's all.
         // After that dialog closes - after paymentContextDidChange is called with
         // a selectedPaymentMethod - THEN you want to call requestPayment.
-        paymentContext.presentPaymentMethodsViewController()
+        paymentContext.presentPaymentOptionsViewController()
         successCallback(command.callbackId, [ "status": "PAYMENT_DIALOG_SHOWN" ])
     }
 
@@ -126,57 +132,58 @@ import Stripe
     // MARK: STPPaymentContextDelegate
 
     func paymentContext(_ paymentContext: STPPaymentContext, didFailToLoadWithError error: Error) {
-        let alertController = UIAlertController(
-            preferredStyle: .alert,
-            retryHandler: { (action) in
-                // Retry payment context loading
-                paymentContext.retryLoading()
-            }
-        )
-
-        var message = error?.localizedDescription ?? ""
+        var message = error.localizedDescription
         var callbackMessage: String = ""
 
-        if let customerKeyError = error as? APIClient.CustomerKeyError {
+        if let customerKeyError = error as? StripeAPIClient.CustomerKeyError {
             switch customerKeyError {
             case .ephemeralKeyUrl:
                 // Fail silently until base url string is set
-                callbackMessage = "[ERROR]: Please assign a value to `APIClient.shared.ephemeralKeyUrl` before continuing. See `StripePaymentsPlugin.swift`."
+                callbackMessage = "[ERROR]: Please assign a value to `StripeAPIClient.shared.ephemeralKeyUrl` before continuing. See `StripePaymentsPlugin.swift`."
             case .invalidResponse:
                 // Use customer key specific error message
-                callbackMessage = "[ERROR]: Missing or malformed response when attempting to call `APIClient.shared.createCustomerKey`. Please check internet connection and backend response."
+                callbackMessage = "[ERROR]: Missing or malformed response when attempting to call `StripeAPIClient.shared.createCustomerKey`. Please check internet connection and backend response."
                 message = "Could not retrieve customer information"
             }
         }
         else {
             // Use generic error message
-            callbackMessage = "[ERROR]: Unrecognized error while loading payment context: \(error)"
-            message = error.localizedDescription ?? "Could not retrieve payment information"
+            callbackMessage = "[ERROR]: Unrecognized error while loading payment context: \(error.localizedDescription)"
+            message = "Could not retrieve payment information"
         }
 
         print(callbackMessage)
         errorCallback(paymentStatusCallback, ["error": callbackMessage], keepCallback: true)
 
-        alertController.setMessage(message) // ??
+        let alertController = UIAlertController(
+            title: "",
+            message: message,
+            preferredStyle: .alert
+        )
+        let retry = UIAlertAction(title: "Retry", style: .default, handler: { (action) in
+            // Retry payment context loading
+            self.paymentContext.retryLoading()
+        })
+        alertController.addAction(retry)
         self.viewController.present(alertController, animated: true, completion: nil)
     }
 
     func paymentContextDidChange(_ paymentContext: STPPaymentContext) {
-        var isLoading = paymentContext.isLoading
-        var isPaymentReady = paymentContext.selectedPaymentMethod != nil
+        let isLoading = paymentContext.loading
+        let isPaymentReady = paymentContext.selectedPaymentOption != nil
         var label = ""
         var image = ""
 
         // https://stackoverflow.com/questions/11592313/how-do-i-save-a-uiimage-to-a-file
-        if selectedPaymentMethod = paymentContext.selectedPaymentMethod {
-            label = selectedPaymentMethod.label
+        if let selectedPaymentOption = paymentContext.selectedPaymentOption {
+            label = selectedPaymentOption.label
             image = ""
             let paths = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)
             if let filePath = paths.first?.appendingPathComponent("StripePaymentMethod.jpg") {
                 // Save image.
                 do {
-                    try UIImageJPEGRepresentation(selectedPaymentMethod.image, 1)?.write(to: filePath, options: .atomic)
-                    image = filePath
+                    try selectedPaymentOption.image.jpegData(compressionQuality: 1)?.write(to: filePath, options: .atomic)
+                    image = filePath.absoluteString
                 }
                 catch { }
             }
@@ -230,11 +237,9 @@ import Stripe
         case .error:
             // Use generic error message
             print("[ERROR]: Unrecognized error while finishing payment: \(String(describing: error))");
-            self.viewController.present(UIAlertController(message: "Could not complete payment"), animated: true)
-
             resultMsg = [
                 "status": "PAYMENT_COMPLETED_ERROR",
-                error: "[ERROR]: Unrecognized error while finishing payment: \(String(describing: error))"
+                "error": "[ERROR]: Unrecognized error while finishing payment: \(String(describing: error))"
             ]
 
             errorCallback(paymentStatusCallback, resultMsg, keepCallback: true)
@@ -247,26 +252,25 @@ import Stripe
     }
 
     func successCallback(_ callbackId: String, _ data: [String:Any?], keepCallback: Bool = false) {
-        var pluginResult = CDVPluginResult(
+        let pluginResult = CDVPluginResult(
             status: .ok,
-            messageAs: data
+            messageAs: data as [AnyHashable : Any]
         )
         pluginResult?.setKeepCallbackAs(keepCallback)
         self.commandDelegate!.send(pluginResult, callbackId: callbackId)
     }
 
     func errorCallback(_ callbackId: String, _ data: [String:Any?], keepCallback: Bool = false) {
-        var pluginResult = CDVPluginResult(
+        let pluginResult = CDVPluginResult(
             status: .error,
-            messageAs: data
+            messageAs: data as [AnyHashable : Any]
         )
         pluginResult?.setKeepCallbackAs(keepCallback)
         self.commandDelegate!.send(pluginResult, callbackId: callbackId)
     }
 
     func verifyConfig() -> Bool {
-        return PluginConfig.publishableKey != nil && !PluginConfig.publishableKey!.isEmpty
-            && PluginConfig.ephemeralKeyUrl != nil && !PluginConfig.ephemeralKeyUrl!.isEmpty
+        return !PluginConfig.publishableKey.isEmpty && !PluginConfig.ephemeralKeyUrl.isEmpty
     }
 
 }

@@ -19,7 +19,7 @@ var paymentStatusCallbackProcessor = function (state) {
  * @param {object} config {publishableKey, ephemeralKeyUrl, appleMerchantId, companyName}
  */
 StripePaymentsPlugin.prototype.init = function (config, successCallback, errorCallback) {
-  exec(successCallback, errorCallback, 'StripePaymentsPlugin', 'init', [config]);
+  exec(successCallback, errorCallback, 'StripePaymentsPlugin', 'beginStripe', [config]);
 };
 
 /**
