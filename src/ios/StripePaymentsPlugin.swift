@@ -207,7 +207,8 @@ import Stripe
             if let filePath = paths.first?.appendingPathComponent("StripePaymentMethod.jpg") {
                 // Save image.
                 do {
-                    try selectedPaymentOption.image.jpegData(compressionQuality: 1)?.write(to: filePath, options: .atomic)
+                    // try selectedPaymentOption.image.jpegData(compressionQuality: 1)?.write(to: filePath, options: .atomic)
+                    try selectedPaymentOption.image.pngData()?.write(to: filePath, options: .atomic)
                     image = filePath.absoluteString
                 }
                 catch { }
