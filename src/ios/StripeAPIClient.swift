@@ -22,20 +22,26 @@ class StripeAPIClient: NSObject, STPCustomerEphemeralKeyProvider {
         }
 
         let parameters: [String: Any] = ["api_version": apiVersion]
-        let headers: HTTPHeaders = [
+        var headers: HTTPHeaders = [
             // "Authorization": "Basic QWxhZGRpbjpvcGVuIHNlc2FtZQ==",
             "Accept": "application/json"
         ]
 
-        // TODO need xcode for this.
+        // Assign any extra headers we've been provided. We COULD use Alamofire's custom auth header types,
+        // but that would require tracking & strongly typing the headers we pass from the app. Too much
+        // work that is not really necessary.
         if PluginConfig.extraHTTPHeaders.count > 0 {
-            // for each HTTPHeader in extraHTTPHeaders
-            // headers.add(header)
+            for key: String in PluginConfig.extraHTTPHeaders.keys {
+                headers[key] = PluginConfig.extraHTTPHeaders[key]
+            }
         }
+
+        print("[StripePaymentsPlugin](StripeAPIClient).createCustomerKey: requesting key from \(url) with headers: \(headers)")
 
         Alamofire.request(url, method: .post, parameters: parameters, headers: headers)
             .validate(statusCode: 200..<300)
             .responseJSON { responseJSON in
+                print("[StripePaymentsPlugin](StripeAPIClient).createCustomerKey: got server result: \(responseJSON)")
                 switch responseJSON.result {
                 case .success(let json):
                     guard let data = json as? [String: AnyObject] else {
@@ -54,5 +60,4 @@ class StripeAPIClient: NSObject, STPCustomerEphemeralKeyProvider {
                 // completion(json, nil)
         }
     }
-
 }

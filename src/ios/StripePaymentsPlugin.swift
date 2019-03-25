@@ -15,6 +15,7 @@ import Stripe
     private var paymentStatusCallback: String = ""
     private var customerContext: STPCustomerContext!
     private var paymentContext: STPPaymentContext!
+    private var keyRetries: Int = 0
 
     override func pluginInitialize() {
         super.pluginInitialize()
@@ -23,6 +24,11 @@ import Stripe
     @objc(addPaymentStatusObserver:)
     func addPaymentStatusObserver(command: CDVInvokedUrlCommand) {
         paymentStatusCallback = command.callbackId
+
+        let resultMsg = [
+            "status": "LISTENER_ADDED"
+        ]
+        successCallback(paymentStatusCallback, resultMsg, keepCallback: true)
     }
 
     // MARK: Init Method
@@ -43,10 +49,10 @@ import Stripe
         PluginConfig.ephemeralKeyUrl = dict["ephemeralKeyUrl"] as? String ?? ""
         PluginConfig.appleMerchantId = dict["appleMerchantId"] as? String ?? ""
         PluginConfig.companyName = dict["companyName"] as? String ?? ""
-        PluginConfig.requestPaymentImmediately = dict["requestPaymentImmediately"] as? Bool ?? true
+        PluginConfig.maximumKeyRetries = dict["maximumKeyRetries"] as? Int ?? 0
 
         if let headersDict = dict["extraHTTPHeaders"] as? [String:String] {
-            PluginConfig.parseExtraHeaders(dict: headersDict)
+            PluginConfig.extraHTTPHeaders = headersDict
         }
 
         if !self.verifyConfig() {
@@ -62,13 +68,19 @@ import Stripe
             STPPaymentConfiguration.shared().appleMerchantIdentifier = PluginConfig.appleMerchantId
         }
 
-        customerContext = STPCustomerContext(keyProvider: StripeAPIClient.shared)
-        paymentContext = STPPaymentContext(customerContext: customerContext)
-
-        paymentContext.delegate = self
-        paymentContext.hostViewController = self.viewController
-
         successCallback(command.callbackId, [ "status": "INIT_SUCCESS" ])
+    }
+
+    func createPaymentContext() {
+        if (customerContext == nil || paymentContext == nil) {
+            customerContext = STPCustomerContext(keyProvider: StripeAPIClient.shared)
+            paymentContext = STPPaymentContext(customerContext: customerContext)
+
+            paymentContext.delegate = self
+            paymentContext.hostViewController = self.viewController
+        }
+
+        customerContext.clearCachedCustomer()
     }
 
 
@@ -90,16 +102,17 @@ import Stripe
             return
         }
 
-        let paymentOptions = PaymentOptions(dict: options)
+        // Allow these to be overridden
+        if let headersDict = options["extraHTTPHeaders"] as? [String:String] {
+            PluginConfig.extraHTTPHeaders = headersDict
+        }
+
+        createPaymentContext()
+
+        let paymentOptions = StripePaymentOptions(dict: options)
         paymentContext.paymentAmount = paymentOptions.price
         paymentContext.paymentCurrency = paymentOptions.currency
         paymentContext.paymentCountry = paymentOptions.country
-
-        // Allow these to be overridden
-        PluginConfig.requestPaymentImmediately = options["requestPaymentImmediately"] as? Bool ?? PluginConfig.requestPaymentImmediately
-        if let headersDict = options["extraHTTPHeaders"] as? [String:String] {
-            PluginConfig.parseExtraHeaders(dict: headersDict)
-        }
 
         // This dialog collects a payment method from the user. When they close it, you get a context
         // change event with the payment info. NO charge has been created at that point, NO source
@@ -120,12 +133,19 @@ import Stripe
             return
         }
 
+        if (paymentContext == nil || customerContext == nil) {
+            let error = "[CONFIG]: Config is not set, init() must be called before using plugin"
+            errorCallback(command.callbackId, [ "status": "REQUEST_PAYMENT_ERROR", "error": error ])
+            return
+        }
+
         doRequestPayment(command.callbackId)
     }
 
     func doRequestPayment(_ callbackId: String) {
+        keyRetries = 0
+        successCallback(callbackId, [ "status": "REQUEST_PAYMENT_STARTED" ], keepCallback: true)
         paymentContext.requestPayment()
-        successCallback(callbackId, [ "status": "REQUEST_PAYMENT_STARTED" ])
     }
 
 
@@ -153,19 +173,24 @@ import Stripe
         }
 
         print(callbackMessage)
-        errorCallback(paymentStatusCallback, ["error": callbackMessage], keepCallback: true)
 
-        let alertController = UIAlertController(
-            title: "",
-            message: message,
-            preferredStyle: .alert
-        )
-        let retry = UIAlertAction(title: "Retry", style: .default, handler: { (action) in
-            // Retry payment context loading
-            self.paymentContext.retryLoading()
-        })
-        alertController.addAction(retry)
-        self.viewController.present(alertController, animated: true, completion: nil)
+        if (keyRetries < PluginConfig.maximumKeyRetries) {
+            keyRetries += 1
+
+            let alertController = UIAlertController(
+                title: "",
+                message: message,
+                preferredStyle: .alert
+            )
+            let retry = UIAlertAction(title: "Retry", style: .default, handler: { (action) in
+                // Retry payment context loading
+                self.paymentContext.retryLoading()
+            })
+            alertController.addAction(retry)
+            self.viewController.present(alertController, animated: true, completion: nil)
+        } else {
+            errorCallback(paymentStatusCallback, ["error": callbackMessage], keepCallback: true)
+        }
     }
 
     func paymentContextDidChange(_ paymentContext: STPPaymentContext) {
@@ -197,11 +222,8 @@ import Stripe
             "image": image
         ]
 
+        print("[StripePaymentsPlugin].paymentContextDidChange: \(resultMsg)")
         successCallback(paymentStatusCallback, resultMsg, keepCallback: true)
-
-        if isPaymentReady && PluginConfig.requestPaymentImmediately {
-            doRequestPayment(paymentStatusCallback)
-        }
     }
 
     // This callback is triggered when requestPayment() completes successfully to create a Source.
@@ -213,6 +235,7 @@ import Stripe
             "source": paymentResult.source.stripeID
         ]
 
+        print("[StripePaymentsPlugin].paymentContext.didCreatePaymentResult: \(resultMsg)")
         successCallback(paymentStatusCallback, resultMsg, keepCallback: true)
         completion(nil)
     }
@@ -242,12 +265,14 @@ import Stripe
                 "error": "[ERROR]: Unrecognized error while finishing payment: \(String(describing: error))"
             ]
 
+            print("[StripePaymentsPlugin].didFinishWith: \(resultMsg)")
             errorCallback(paymentStatusCallback, resultMsg, keepCallback: true)
             return
         case .userCancellation:
             resultMsg = [ "status": "PAYMENT_CANCELED" ]
         }
 
+        print("[StripePaymentsPlugin].didFinishWith: \(resultMsg)")
         successCallback(paymentStatusCallback, resultMsg, keepCallback: true)
     }
 
@@ -257,6 +282,8 @@ import Stripe
             messageAs: data as [AnyHashable : Any]
         )
         pluginResult?.setKeepCallbackAs(keepCallback)
+
+        print("[StripePaymentsPlugin](successCallback) sending result to \(callbackId), result: \(String(describing: pluginResult))")
         self.commandDelegate!.send(pluginResult, callbackId: callbackId)
     }
 
@@ -266,6 +293,8 @@ import Stripe
             messageAs: data as [AnyHashable : Any]
         )
         pluginResult?.setKeepCallbackAs(keepCallback)
+
+        print("[StripePaymentsPlugin](errorCallback) sending result to \(callbackId), result: \(data)")
         self.commandDelegate!.send(pluginResult, callbackId: callbackId)
     }
 

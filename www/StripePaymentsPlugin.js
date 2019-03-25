@@ -5,8 +5,9 @@ var StripePaymentsPlugin = function () { };
 StripePaymentsPlugin._paymentStatusObserverList = [];
 
 StripePaymentsPlugin._processFunctionList = function (array, param) {
-  for (var i = 0; i < array.length; i++)
+  for (var i = 0; i < array.length; i++) {
     array[i](param);
+  }
 };
 
 var paymentStatusCallbackProcessor = function (state) {
@@ -60,15 +61,16 @@ StripePaymentsPlugin.prototype.requestPayment = function (successCallback, error
 
 
 //-------------------------------------------------------------------
+var instance = new StripePaymentsPlugin();
 
 if (!window.plugins) {
   window.plugins = {};
 }
 
 if (!window.plugins.StripePaymentsPlugin) {
-  window.plugins.StripePaymentsPlugin = new StripePaymentsPlugin();
+  window.plugins.StripePaymentsPlugin = instance;
 }
 
 if (typeof module != 'undefined' && module.exports) {
-  module.exports = StripePaymentsPlugin;
+  module.exports = instance;
 }

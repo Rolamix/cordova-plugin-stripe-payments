@@ -54,22 +54,25 @@
         </feature>
       </config-file>
 
-      <!-- <framework src="Stripe" type="podspec" spec="~> 15.0.0" />
+      <framework src="Stripe" type="podspec" spec="~> 15.0.0" />
       <framework src="Alamofire" type="podspec" spec="~> 4.8.1" />
-      <framework src="CardIO" type="podspec" spec="~> 5.4.1" /> -->
+      <framework src="CardIO" type="podspec" spec="~> 5.4.1" />
       <!-- https://github.com/cordova-develop/cordova-plugin-pods3/blob/master/plugin.xml -->
-      <pods use-frameworks="true">
-        <pod name="Stripe" spec="~> 15.0.0" />
-        <pod name="CardIO" spec="~> 5.4.1" />
-        <pod name="Alamofire" spec="~> 4.8.1" />
-      </pods>
+      <!-- <podspec>
+        <config>
+          <source url="https://github.com/CocoaPods/Specs.git"/>
+        </config>
+        <pods use-frameworks="true">
+          <pod name="Stripe" spec="~> 15.0.0" />
+          <pod name="CardIO" spec="~> 5.4.1" />
+          <pod name="Alamofire" spec="~> 4.8.1" swift-version="4.2" />
+        </pods>
+      </podspec> -->
 
       <source-file src="src/ios/StripeAPIClient.swift" />
       <source-file src="src/ios/StripePaymentOptions.swift" />
       <source-file src="src/ios/StripePaymentsPluginConfig.swift" />
       <source-file src="src/ios/StripePaymentsPlugin.swift" />
-
-      <!-- <framework src="Foundation.framework" /> -->
     </platform>
 </plugin>
 
