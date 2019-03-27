@@ -50,6 +50,8 @@ import Stripe
         PluginConfig.appleMerchantId = dict["appleMerchantId"] as? String ?? ""
         PluginConfig.companyName = dict["companyName"] as? String ?? ""
         PluginConfig.maximumKeyRetries = dict["maximumKeyRetries"] as? Int ?? 0
+        PluginConfig.paymentOptionsFooter = dict["paymentOptionsFooter"] as? String ?? ""
+        PluginConfig.addCardFooter = dict["addCardFooter"] as? String ?? ""
 
         if let headersDict = dict["extraHTTPHeaders"] as? [String:String] {
             PluginConfig.extraHTTPHeaders = headersDict
@@ -113,6 +115,13 @@ import Stripe
         paymentContext.paymentAmount = paymentOptions.price
         paymentContext.paymentCurrency = paymentOptions.currency
         paymentContext.paymentCountry = paymentOptions.country
+
+        if !PluginConfig.paymentOptionsFooter.isEmpty {
+            paymentContext.paymentOptionsViewControllerFooterView = StripePaymentContextFooterView(text: PluginConfig.paymentOptionsFooter, align: .left)
+        }
+        if !PluginConfig.addCardFooter.isEmpty {
+            paymentContext.addCardViewControllerFooterView = StripePaymentContextFooterView(text: PluginConfig.addCardFooter)
+        }
 
         // This dialog collects a payment method from the user. When they close it, you get a context
         // change event with the payment info. NO charge has been created at that point, NO source

@@ -73,6 +73,7 @@
       <source-file src="src/ios/StripePaymentOptions.swift" />
       <source-file src="src/ios/StripePaymentsPluginConfig.swift" />
       <source-file src="src/ios/StripePaymentsPlugin.swift" />
+      <source-file src="src/ios/StripePaymentContextFooterView.swift" />
     </platform>
 </plugin>
 

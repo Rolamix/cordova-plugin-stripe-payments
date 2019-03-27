@@ -10,6 +10,8 @@ public class StripePaymentsPluginConfig {
     public var appleMerchantId: String = ""
     public var companyName: String = ""
     public var maximumKeyRetries: Int = 0
+    public var paymentOptionsFooter: String = ""
+    public var addCardFooter: String = ""
     public var extraHTTPHeaders: [String:String] = [:]
 }
 
