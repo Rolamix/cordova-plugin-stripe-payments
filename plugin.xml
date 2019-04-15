@@ -31,9 +31,9 @@
 
     <!-- Android -->
     <platform name="android">
-      <config-file parent="/*/application" target="AndroidManifest.xml">
-              <meta-data android:name="com.google.android.gms.wallet.api.enabled" android:value="true" />
-      </config-file>
+      <!-- <config-file parent="/*/application" target="AndroidManifest.xml">
+        <meta-data android:name="com.google.android.gms.wallet.api.enabled" android:value="true" />
+      </config-file> -->
 
       <config-file target="res/xml/config.xml" parent="/*">
         <feature name="StripePaymentsPlugin">
@@ -41,8 +41,25 @@
         </feature>
       </config-file>
 
-      <source-file src="src/android/StripePaymentsPlugin.java" target-dir="src/com/rolamix/plugins/stripe/" />
+      <config-file target="AndroidManifest.xml" parent="/manifest/application/activity[@android:name='MainActivity']">
+        <intent-filter>
+            <action android:name="android.intent.action.VIEW"/>
+            <category android:name="android.intent.category.DEFAULT"/>
+            <category android:name="android.intent.category.BROWSABLE"/>
+            <data android:host="stripe3ds" android:scheme="stripe"/>
+        </intent-filter>
+      </config-file>
+
+      <framework src="com.stripe:stripe-android:8.7.0" />
       <framework src="src/android/StripePaymentsPlugin.gradle" custom="true" type="gradleReference" />
+
+      <source-file src="src/android/RetrofitFactory.java" target-dir="src/com/rolamix/plugins/stripe/" />
+      <source-file src="src/android/StripePaymentConfig.java" target-dir="src/com/rolamix/plugins/stripe/" />
+      <source-file src="src/android/StripePaymentsPlugin.java" target-dir="src/com/rolamix/plugins/stripe/" />
+      <source-file src="src/android/StripePluginConfig.java" target-dir="src/com/rolamix/plugins/stripe/" />
+      <source-file src="src/android/StripePluginEphemeralKeyProvider.java" target-dir="src/com/rolamix/plugins/stripe/" />
+      <source-file src="src/android/StripePluginUtils.java" target-dir="src/com/rolamix/plugins/stripe/" />
+      <source-file src="src/android/StripeService.java" target-dir="src/com/rolamix/plugins/stripe/" />
     </platform>
 
 

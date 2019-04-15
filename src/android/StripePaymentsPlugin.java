@@ -1,85 +1,126 @@
 package com.rolamix.plugins.stripe;
 
-import java.util.ArrayList;
-import java.lang.reflect.Type;
-import java.util.Arrays;
-import java.util.Collection;
 import java.util.HashMap;
-import java.util.Map;
-import java.util.Set;
+import java.util.concurrent.Callable;
 
+import org.apache.cordova.CordovaActivity;
 import org.apache.cordova.CallbackContext;
 import org.apache.cordova.CordovaInterface;
 import org.apache.cordova.CordovaPlugin;
 import org.apache.cordova.CordovaWebView;
 import org.apache.cordova.PluginResult;
+
 import org.json.JSONArray;
 import org.json.JSONException;
 import org.json.JSONObject;
 
+import android.content.DialogInterface;
+import android.net.Uri;
+import android.support.annotation.Nullable;
+import android.support.v7.app.AlertDialog;
+import android.util.Log;
 import android.app.Activity;
 import android.content.Context;
 import android.content.Intent;
-import android.content.pm.PackageManager;
 import android.support.annotation.NonNull;
-import android.os.Build;
-import com.google.gson.reflect.TypeToken;
 
-import com.google.android.gms.common.api.ApiException;
-import com.google.android.gms.common.api.Status;
-import com.google.android.gms.tasks.Task;
-import com.google.android.gms.wallet.AutoResolveHelper;
-import com.google.android.gms.wallet.CardRequirements;
-import com.google.android.gms.wallet.IsReadyToPayRequest;
-import com.google.android.gms.wallet.PaymentData;
-import com.google.android.gms.wallet.PaymentDataRequest;
-import com.google.android.gms.wallet.PaymentMethodTokenizationParameters;
-import com.google.android.gms.wallet.PaymentsClient;
-import com.google.android.gms.wallet.TransactionInfo;
-import com.google.android.gms.wallet.Wallet;
-import com.google.android.gms.wallet.WalletConstants;
-import com.stripe.android.CardUtils;
-import com.stripe.android.SourceCallback;
-import com.stripe.android.Stripe;
-import com.stripe.android.TokenCallback;
-import com.stripe.android.model.AccountParams;
-import com.stripe.android.model.BankAccount;
+// import com.stripe.android.CardUtils;
 import com.stripe.android.model.Card;
-import com.stripe.android.model.Source;
 import com.stripe.android.model.SourceParams;
-import com.stripe.android.model.Token;
-import com.stripe.android.view.CardInputWidget;
+import com.stripe.android.model.Customer;
+import com.stripe.android.model.CustomerSource;
+import com.stripe.android.model.Source;
+import com.stripe.android.model.SourceCardData;
+import com.stripe.android.Stripe;
+import com.stripe.android.StripeError;
+import com.stripe.android.CustomerSession;
+import com.stripe.android.PaymentConfiguration;
+import com.stripe.android.PaymentResultListener;
+import com.stripe.android.PaymentSession;
+import com.stripe.android.PaymentSessionConfig;
+import com.stripe.android.PaymentSessionData;
 
-// https://stripe.com/docs/mobile/android
+import rx.Observable;
+import rx.android.schedulers.AndroidSchedulers;
+import rx.functions.Action1;
+import rx.schedulers.Schedulers;
+import rx.subscriptions.CompositeSubscription;
+
+
+// https://stripe.com/docs/mobile/android/standard
 // https://github.com/stripe/stripe-android
+// https://github.com/stripe/stripe-android/blob/master/example/
+// https://github.com/stripe/stripe-android/tree/master/samplestore/
 // https://github.com/zyra/cordova-plugin-stripe/blob/v2/src/android/CordovaStripe.java
 // https://github.com/stripe/stripe-connect-rocketrides/blob/master/server/routes/api/rides.js
+// Integrating Google Pay.
+// https://developers.google.com/pay/api/android/overview
+// https://stripe.com/docs/mobile/android/google-pay
+// https://github.com/jack828/cordova-plugin-stripe-google-apple-pay
 
 public class StripePaymentsPlugin extends CordovaPlugin {
 
-    private CallbackContext callbackContext;
+    private static final String LOG_TAG = "StripePaymentsPlugin";
 
-    private String publishableKey;
+    @NonNull private final CompositeSubscription mCompositeSubscription = new CompositeSubscription();
+    private CallbackContext paymentStatusCallback;
+    private PaymentSession mPaymentSession;
+    private Stripe stripeInstance;
+    private Source mRedirectSource; // used for 3DS verifications
 
-    private static final int LOAD_PAYMENT_DATA_REQUEST_CODE = 9972;
+    private static final String ACTION_INIT_PLUGIN = "beginStripe";
+    private static final String ACTION_ADD_STATUS_OBSERVER = "addPaymentStatusObserver";
+    private static final String ACTION_SHOW_PAYMENT_DIALOG = "showPaymentDialog";
+    private static final String ACTION_REQUEST_PAYMENT = "requestPayment";
 
-    public static final String ACTION_SET_KEY = "setKey";
+    private static final String RETURN_SCHEMA = "stripe://";
+    private static final String RETURN_HOST_SYNC = "stripe3ds"; // matches the value in plugin.xml
+    private static final String QUERY_CLIENT_SECRET = "client_secret";
+    private static final String QUERY_SOURCE_ID = "source";
 
-    public static final String ACTION_SET_NAME = "setName";
-
-    public static final String ACTION_PICK = "pick";
-
-    public static final String ACTION_PICK_AND_STORE = "pickAndStore";
-
-    public static final String ACTION_HAS_PERMISSION = "hasPermission";
-
-    private static final String LOG_TAG = "FileStackPlugin";
 
     public StripePaymentsPlugin() {}
 
-    public void initialize(CordovaInterface cordova, CordovaWebView webView) {
-        super.initialize(cordova, webView);
-        stripeInstance = new Stripe(webView.getContext());
+    @Override()
+    protected void pluginInitialize() {
+        super.pluginInitialize();
+        stripeInstance = new Stripe(this.cordova.getActivity().getApplicationContext());
+    }
+
+    @Override
+    public void onActivityResult(int requestCode, int resultCode, Intent data) {
+        mPaymentSession.handlePaymentData(requestCode, resultCode, data);
+    }
+
+    @Override
+    protected void onNewIntent(Intent intent) {
+        super.onNewIntent(intent);
+        if (intent.getData() != null && intent.getData().getQuery() != null) {
+            // The client secret and source ID found here is identical to
+            // that of the source used to get the redirect URL.
+            String clientSecret = intent.getData().getQueryParameter(QUERY_CLIENT_SECRET);
+            String sourceId = intent.getData().getQueryParameter(QUERY_SOURCE_ID);
+
+            if (clientSecret != null
+                && sourceId != null
+                && clientSecret.equals(mRedirectSource.getClientSecret())
+                && sourceId.equals(mRedirectSource.getId())) {
+
+                Log.i(LOG_TAG, "[StripePaymentsPlugin].requestPayment 3DS source verified:" + mRedirectSource.getId());
+                HashMap<String, Object> message = new HashMap<>();
+                message.put("status", "PAYMENT_CREATED");
+                message.put("source", mRedirectSource.getId());
+                successCallback(paymentStatusCallback, StripePluginUtils.mapToJSON(message), true);
+                mRedirectSource = null;
+            }
+            // if we had a progress dialog, we'd dismiss it here.
+        }
+    }
+
+    @Override
+    protected void onDestroy() {
+        super.onDestroy();
+        mPaymentSession.onDestroy();
     }
 
     /**
@@ -91,161 +132,386 @@ public class StripePaymentsPlugin extends CordovaPlugin {
      * @return                  True if the action was valid, false otherwise.
      */
     public boolean execute(final String action, final JSONArray args, final CallbackContext callbackContext) throws JSONException {
-        this.callbackContext = callbackContext;
-        this.executeArgs = args;
-        this.action = action;
-        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.M || action.equals(ACTION_HAS_PERMISSION)) {
-            callbackContext.sendPluginResult(new PluginResult(PluginResult.Status.OK, hasPermission()));
-            return true;
+
+        switch (action) {
+            case ACTION_INIT_PLUGIN:
+                args.optJSONObject(0);
+                initPluginConfig(args.getJSONObject(0), callbackContext);
+                break;
+
+            case ACTION_ADD_STATUS_OBSERVER:
+                addStatusObserver(callbackContext);
+                break;
+
+            case ACTION_SHOW_PAYMENT_DIALOG:
+                showPaymentDialog(args.getJSONObject(0), callbackContext);
+                break;
+
+            case ACTION_REQUEST_PAYMENT:
+                requestPayment(callbackContext);
+                break;
+
+            default:
+                return false;
         }
-        else {
-            if (Build.VERSION.SDK_INT < Build.VERSION_CODES.M || action.equals(ACTION_SET_KEY) || action.equals(ACTION_SET_NAME)) {
-                execute();
-                return true;
-            }
-            else {
-                if (hasPermission()) {
-                    execute();
-                } else {
-                    requestPermission();
-                }
-                return true;
-            }
+
+        return true;
+    }
+
+    public void initPluginConfig(JSONObject pluginConfig, CallbackContext callbackContext) {
+        HashMap<String, Object> message = new HashMap<>();
+        message.put("status", "INIT_ERROR");
+        message.put("error", "[CONFIG]: The Stripe Publishable Key and ephemeral key generation URL are required");
+
+        if (pluginConfig == null || pluginConfig.length() == 0) {
+            errorCallback(callbackContext, StripePluginUtils.mapToJSON(message));
+            return;
         }
-    }
 
-    private boolean hasPermission() {
-        return cordova.hasPermission(android.Manifest.permission.WRITE_EXTERNAL_STORAGE);
-    }
+        StripePluginConfig.getInstance().publishableKey = pluginConfig.optString("publishableKey", "");
+        StripePluginConfig.getInstance().ephemeralKeyUrl = pluginConfig.optString("ephemeralKeyUrl", "");
+        StripePluginConfig.getInstance().companyName = pluginConfig.optString("companyName", "");
 
-    private void requestPermission() {
-        cordova.requestPermission(this, 0, android.Manifest.permission.WRITE_EXTERNAL_STORAGE);
-    }
+        JSONObject headers = pluginConfig.optJSONObject("extraHTTPHeaders");
+        StripePluginConfig.getInstance().extraHTTPHeaders = StripePluginUtils.parseExtraHeaders(headers, new HashMap<>());
 
-    public void onRequestPermissionResult(int requestCode, String[] permissions, int[] grantResults) throws JSONException {
-        for (int r : grantResults) {
-            if (r == PackageManager.PERMISSION_DENIED) {
-                callbackContext.sendPluginResult(new PluginResult(PluginResult.Status.ERROR, "User has denied permission"));
-                return;
-            }
+        if (!StripePluginConfig.getInstance().validate()) {
+            errorCallback(callbackContext, StripePluginUtils.mapToJSON(message));
+            return;
         }
-        execute();
+
+        PaymentConfiguration.init(StripePluginConfig.getInstance().publishableKey);
+        stripeInstance.setDefaultPublishableKey(StripePluginConfig.getInstance().publishableKey);
+
+        message.put("status", "INIT_SUCCESS");
+        message.remove("error");
+        successCallback(callbackContext, StripePluginUtils.mapToJSON(message));
     }
 
-    public void execute() {
-        final FileStackPlugin cdvPlugin = this;
-        this.cordova.getThreadPool().execute(() -> {
-            try {
-                if (ACTION_SET_KEY.equals(cdvPlugin.getAction())) {
-                    this.apiKey = cdvPlugin.getArgs().getString(0);
-                    return;
-                }
+    public void addStatusObserver(CallbackContext callbackContext) {
+        paymentStatusCallback = callbackContext;
 
-                Context context = cordova.getActivity().getApplicationContext();
-                Intent intent = new Intent(context, FsActivity.class);
-                Config config = new Config(this.apiKey);
-                intent.putExtra(FsConstants.EXTRA_CONFIG, config);
-                intent.putExtra(FsConstants.EXTRA_AUTO_UPLOAD, true);
-                if (ACTION_PICK.equals(cdvPlugin.getAction()) || ACTION_PICK_AND_STORE.equals(cdvPlugin.getAction())) {
-                    parseGlobalArgs(intent, cdvPlugin.getArgs());
-                    if (ACTION_PICK_AND_STORE.equals(cdvPlugin.getAction())) {
-                        parseStoreArgs(intent, cdvPlugin.getArgs());
+        HashMap<String, Object> message = new HashMap<>();
+        message.put("status", "LISTENER_ADDED");
+        successCallback(paymentStatusCallback, StripePluginUtils.mapToJSON(message), true);
+    }
+
+    public void showPaymentDialog(JSONObject paymentConfig, CallbackContext callbackContext) {
+        HashMap<String, Object> message = new HashMap<>();
+        message.put("status", "PAYMENT_DIALOG_ERROR");
+        message.put("error", "[CONFIG]: Error parsing payment options or they were not provided");
+
+        if (paymentConfig == null || paymentConfig.length() == 0) {
+            errorCallback(callbackContext, StripePluginUtils.mapToJSON(message));
+            return;
+        }
+
+        if (!StripePluginConfig.getInstance().validate()) {
+            message.put("error", "[CONFIG]: Config is not set, init() must be called before using plugin");
+            errorCallback(callbackContext, StripePluginUtils.mapToJSON(message));
+        }
+
+        JSONObject headers = paymentConfig.optJSONObject("extraHTTPHeaders");
+        StripePluginConfig.getInstance().extraHTTPHeaders = StripePluginUtils.parseExtraHeaders(headers, new HashMap<>());
+
+        setupCustomerSession();
+        setupPaymentSession();
+
+        StripePaymentConfig.getInstance().price = paymentConfig.optLong("price", 0L);
+        StripePaymentConfig.getInstance().currency = paymentConfig.optString("currency", "USD");
+        StripePaymentConfig.getInstance().country = paymentConfig.optString("country", "US");
+
+        mPaymentSession.setCartTotal(StripePaymentConfig.getInstance().price);
+        mPaymentSession.presentPaymentMethodSelection();
+
+        message.clear();
+        message.put("status", "PAYMENT_DIALOG_SHOWN");
+        successCallback(callbackContext, StripePluginUtils.mapToJSON(message));
+    }
+
+    // Android does in 1 step what requires 2 steps on iOS. Android saves the payment method
+    // to the customer as soon as one is entered; on iOS the source is not created until AFTER
+    // you requestPayment from the payment context (requiring the 2nd step).
+    // However, Android still requires verifying 3DSecure so we will try to do that here.
+    public void requestPayment(CallbackContext callbackContext) {
+        HashMap<String, Object> message = new HashMap<>();
+        message.put("status", "REQUEST_PAYMENT_ERROR");
+        message.put("error", "[CONFIG]: Config is not set, init() must be called before using plugin");
+
+        if (!StripePluginConfig.getInstance().validate()) {
+            errorCallback(callbackContext, StripePluginUtils.mapToJSON(message));
+        }
+
+        if (mPaymentSession == null) {
+            errorCallback(callbackContext, StripePluginUtils.mapToJSON(message));
+            return;
+        }
+
+        PaymentSessionData data = mPaymentSession.getPaymentSessionData();
+        final String selectedPaymentMethodId = data.getSelectedPaymentMethodId();
+
+        if (data.isPaymentReadyToCharge() && data.getPaymentResult() == PaymentResultListener.INCOMPLETE && selectedPaymentMethodId != null) {
+            CustomerSession.getInstance().retrieveCurrentCustomer(
+                new CustomerSession.CustomerRetrievalListener() {
+                    @Override
+                    public void onCustomerRetrieved(@NonNull Customer customer) {
+                        CustomerSource source = customer.getSourceById(selectedPaymentMethodId);
+                        if (source == null) {
+                            message.put("error", "Error: No valid payment source is available to complete payment");
+                            errorCallback(callbackContext, StripePluginUtils.mapToJSON(message));
+                            return;
+                        }
+
+                        Source src = source.asSource();
+                        if (src == null) {
+                            message.put("error", "Error: No valid payment source is available to complete payment");
+                            errorCallback(callbackContext, StripePluginUtils.mapToJSON(message));
+                            return;
+                        }
+
+                        String sourceType = src.getType();
+                        if (Source.CARD.equals(sourceType)) {
+                            // Before we complete, we need to check if this transaction requires 3DSecure
+                            SourceCardData cardData = (SourceCardData) src.getSourceTypeModel();
+                            if (SourceCardData.REQUIRED.equals(cardData.getThreeDSecureStatus())) {
+                                // In this case, you would need to ask the user to verify the purchase.
+                                createThreeDSecureSource(src.getId());
+                                return;
+                            }
+                        }
+
+                        // Either this is not a card, and it's Stripe's job to return the source;
+                        // or it is a card, and 3DS is not required. In either case we can immediately
+                        // return the Source for charging.
+                        Log.i(LOG_TAG, "[StripePaymentsPlugin].requestPayment source retrieved:" + src.getId());
+                        message.put("status", "PAYMENT_CREATED");
+                        message.remove("error");
+                        message.put("source", src.getId());
+                        successCallback(paymentStatusCallback, StripePluginUtils.mapToJSON(message), true);
                     }
-                    cordova.startActivityForResult(cdvPlugin, intent, REQUEST_FILESTACK);
+
+                    @Override
+                    public void onError(int httpCode, @Nullable String errorMessage, @Nullable StripeError stripeError) {
+                        displayError(errorMessage);
+                        message.put("error", errorMessage);
+                        errorCallback(callbackContext, StripePluginUtils.mapToJSON(message));
+                    }
+                });
+        } else {
+            message.put("error", "Error: No valid payment source is available to complete payment");
+            errorCallback(callbackContext, StripePluginUtils.mapToJSON(message));
+        }
+    }
+
+
+    /**
+     *
+     *
+     * Implementation methods
+     *
+     */
+
+    private void setupCustomerSession() {
+        // CustomerSession only needs to be initialized once per app.
+        CustomerSession.initCustomerSession(
+            new StripePluginEphemeralKeyProvider(
+                new StripePluginEphemeralKeyProvider.ProgressListener() {
+                    @Override
+                    public void onStringResponse(@NonNull String string) {
+                        if (string.startsWith("Error: ")) {
+                            new AlertDialog.Builder(getApplicationContext())
+                                    .setMessage(string)
+                                    .show();
+                        }
+                    }
+                }));
+    }
+
+    private void setupPaymentSession() {
+        mPaymentSession = new PaymentSession(getActivity());
+
+        mPaymentSession.init(new PaymentSession.PaymentSessionListener() {
+            @Override
+            public void onCommunicatingStateChanged(boolean isCommunicating) { }
+
+            @Override
+            public void onError(int errorCode, @Nullable String errorMessage) {
+                HashMap<String, Object> message = new HashMap<>();
+                message.put("status", "PAYMENT_STATUS_ERROR");
+                message.put("error", errorMessage);
+                errorCallback(paymentStatusCallback, StripePluginUtils.mapToJSON(message), true);
+                displayError(errorMessage);
+            }
+
+            @Override
+            public void onPaymentSessionDataChanged(@NonNull PaymentSessionData data) {
+                HashMap<String, Object> message = new HashMap<>();
+                message.put("status", "PAYMENT_STATUS_ERROR");
+
+                final String selectedPaymentMethodId = data.getSelectedPaymentMethodId();
+
+                if (selectedPaymentMethodId != null) {
+                    CustomerSession.getInstance().retrieveCurrentCustomer(
+                        new CustomerSession.CustomerRetrievalListener() {
+                            @Override
+                            public void onCustomerRetrieved(@NonNull Customer customer) {
+                                // This is how you'd do it if you wanted to use the Customer's default source.
+                                // However, we want to use the one they selected in the dialog.
+                                // String sourceId = customer.getDefaultSource();
+                                // if (sourceId == null) { return; }
+                                CustomerSource source = customer.getSourceById(selectedPaymentMethodId);
+
+                                if (source == null) {
+                                    message.put("error", "Error: No valid payment source is available to complete payment");
+                                    errorCallback(paymentStatusCallback, StripePluginUtils.mapToJSON(message), true);
+                                    return;
+                                }
+
+                                Source src = source.asSource();
+                                if (src == null) {
+                                    message.put("error", "Error: No valid payment source is available to complete payment");
+                                    errorCallback(paymentStatusCallback, StripePluginUtils.mapToJSON(message), true);
+                                    return;
+                                }
+
+                                // Report if this transaction requires 3DSecure so that client has an opportunity
+                                // to prompt the user to verify.
+                                SourceCardData cardData = (SourceCardData) src.getSourceTypeModel();
+                                boolean is3ds = SourceCardData.REQUIRED.equals(cardData.getThreeDSecureStatus());
+                                String sourceId = src.getId();
+
+                                message.put("status", "PAYMENT_STATUS_CHANGED");
+                                message.put("isPaymentReady", data.isPaymentReadyToCharge());
+                                message.put("isLoading", !data.isPaymentReadyToCharge());
+                                message.put("label", StripePluginUtils.formatSourceDescription(src));
+                                message.put("image", null); // Not supported on this platform... yet.
+                                message.put("is3DSRequired", is3ds);
+                                message.put("source", sourceId);
+
+                                successCallback(paymentStatusCallback, StripePluginUtils.mapToJSON(message), true);
+                            }
+
+                            @Override
+                            public void onError(int httpCode, @Nullable String errorMessage, @Nullable StripeError stripeError) {
+                                displayError(errorMessage);
+                                message.put("error", errorMessage);
+                                errorCallback(paymentStatusCallback, StripePluginUtils.mapToJSON(message), true);
+                            }
+                        });
+                } else {
+                    message.put("status", "PAYMENT_STATUS_CHANGED");
+                    message.put("isPaymentReady", false);
+                    message.put("isLoading", true);
+                    message.put("label", "");
+                    message.put("image", null); // Not supported on this platform... yet.
+                    successCallback(paymentStatusCallback, StripePluginUtils.mapToJSON(message), true);
                 }
             }
-            catch(JSONException exception) {
-                cdvPlugin.getCallbackContext().error("cannot parse json");
-            }
-        });
+        }, new PaymentSessionConfig.Builder()
+                .setShippingInfoRequired(false)
+                .setShippingMethodsRequired(false)
+                .build()
+        );
     }
 
-    @Override
-    public void onActivityResult(int requestCode, int resultCode, Intent data) {
-        if (requestCode == REQUEST_FILESTACK) {
-            if (resultCode == Activity.RESULT_OK) {
-                ArrayList<Selection> selections = data.getParcelableArrayListExtra(FsConstants.EXTRA_SELECTION_LIST);
-                try{
-                    callbackContext.success(toJSON(selections));
-                }
-                catch(JSONException exception) {
-                    callbackContext.error("json exception");
-                }
-            } else {
-                callbackContext.error("nok");
-            }
-        }
-        else {
-            super.onActivityResult(requestCode, resultCode, data);
-        }
+    /**
+     * Create the 3DS Source as a separate call to the API. This is what is needed
+     * to verify the third-party approval. The only information from the Card source
+     * that is used is the ID field.
+     *
+     * @param sourceId the {@link Source#mId} from the {@link Card}-created {@link Source}.
+     */
+    void createThreeDSecureSource(String sourceId) {
+        // This represents a request for a 3DS purchase.
+        final SourceParams threeDParams = SourceParams.createThreeDSecureParams(
+                StripePaymentConfig.getInstance().price,
+                StripePaymentConfig.getInstance().currency,
+                RETURN_SCHEMA + RETURN_HOST_SYNC,
+                sourceId);
+
+        Observable<Source> threeDSecureObservable = Observable.fromCallable(
+                new Callable<Source>() {
+                    @Override
+                    public Source call() throws Exception {
+                        return stripeInstance.createSourceSynchronous(
+                                threeDParams,
+                                PaymentConfiguration.getInstance().getPublishableKey());
+                    }
+                });
+
+        mCompositeSubscription.add(threeDSecureObservable
+                .subscribeOn(Schedulers.io())
+                .observeOn(AndroidSchedulers.mainThread())
+                .subscribe(
+                        // Because we've made the mapping above, we're now subscribing
+                        // to the result of creating a 3DS Source
+                        new Action1<Source>() {
+                            @Override
+                            public void call(Source source) {
+                                // Once a 3DS Source is created, that is used
+                                // to initiate the third-party verification
+                                mRedirectSource = source;
+                                Intent browserIntent = new Intent(Intent.ACTION_VIEW, Uri.parse(source.getRedirect().getUrl()));
+                                getActivity().startActivity(browserIntent);
+                            }
+                        },
+                        new Action1<Throwable>() {
+                            @Override
+                            public void call(Throwable throwable) {
+                                displayError(throwable.getMessage());
+                            }
+                        }
+                ));
     }
 
-    public void parseGlobalArgs(Intent intent, JSONArray args) throws JSONException {
-        if (!args.isNull(0)) {
-            intent.putExtra("mimetype", parseJSONStringArray(args.getJSONArray(0)));
-        }
-        if (!args.isNull(1)) {
-            intent.putExtra("services", parseJSONStringArray(args.getJSONArray(1)));
-        }
-        if (!args.isNull(2)) {
-            intent.putExtra("multiple", args.getBoolean(2));
-        }
-        if (!args.isNull(3)) {
-            intent.putExtra("maxFiles", args.getInt(3));
-        }
-        if (!args.isNull(4)) {
-            intent.putExtra("maxSize", args.getInt(4));
-        }
+    private void displayError(String errorMessage) {
+        AlertDialog alertDialog = new AlertDialog.Builder(getApplicationContext()).create();
+        alertDialog.setTitle("Error");
+        alertDialog.setMessage(errorMessage);
+        alertDialog.setButton(AlertDialog.BUTTON_NEUTRAL, "OK",
+                new DialogInterface.OnClickListener() {
+                    public void onClick(DialogInterface dialog, int which) {
+                        dialog.dismiss();
+                    }
+                });
+        alertDialog.show();
     }
 
-    public void parseStoreArgs(Intent intent, JSONArray args) throws JSONException {
-        if (!args.isNull(5)) {
-            intent.putExtra("location", args.getString(5));
-        }
-        if (!args.isNull(6)) {
-            intent.putExtra("path", args.getString(6));
-        }
-        if (!args.isNull(7)) {
-            intent.putExtra("container", args.getString(7));
-        }
-        if (!args.isNull(8)) {
-            intent.putExtra("access", args.getString(8));
-        }
+    private Context getContext() {
+        return this.cordova.getContext();
     }
 
-    public String[] parseJSONStringArray(JSONArray jSONArray) throws JSONException {
-        String[] a = new String[jSONArray.length()];
-        for(int i = 0; i < jSONArray.length(); i++){
-            a[i] = jSONArray.getString(i);
-        }
-        return a;
+    private Activity getActivity() {
+        return this.cordova.getActivity();
     }
 
-    public JSONArray toJSON(ArrayList<Selection> selections) throws JSONException {
-        JSONArray res = new JSONArray();
-        for (Selection selection : selections) {
-            JSONObject f = new JSONObject();
-            f.put("provider", selection.getProvider());
-            f.put("url", selection.getUri());
-            f.put("filename", selection.getName());
-            f.put("mimetype", selection.getMimeType());
-            f.put("localPath", selection.getPath());
-            f.put("size", selection.getSize());
-
-            res.put(f);
-        }
-        return res;
+    private Context getApplicationContext() {
+        return this.getActivity().getApplicationContext();
+        // Other useful lines
+        // cordova.startActivityForResult(this, intent, REQUEST_SOMETHING);
+        // this.cordova.getThreadPool().execute(() -> { });
     }
 
-    public String getAction() {
-        return this.action;
+    private PluginResult successCallback(CallbackContext context, JSONObject message) {
+        return successCallback(context, message, false);
     }
 
-    public JSONArray getArgs() {
-        return this.executeArgs;
+    private PluginResult successCallback(CallbackContext context, JSONObject message, boolean keepCallback) {
+        PluginResult result = new PluginResult(PluginResult.Status.OK, message);
+        result.setKeepCallback(keepCallback);
+        context.sendPluginResult(result);
+        return result;
     }
 
-    public CallbackContext getCallbackContext() {
-        return this.callbackContext;
+    private PluginResult errorCallback(CallbackContext context, JSONObject message) {
+        return errorCallback(context, message, false);
     }
+
+    private PluginResult errorCallback(CallbackContext context, JSONObject message, boolean keepCallback) {
+        PluginResult result = new PluginResult(PluginResult.Status.ERROR, message);
+        result.setKeepCallback(keepCallback);
+        context.sendPluginResult(result);
+        return result;
+    }
+
 }
