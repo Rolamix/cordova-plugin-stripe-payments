@@ -51,7 +51,7 @@
       </config-file>
 
       <framework src="com.stripe:stripe-android:8.7.0" />
-      <framework src="src/android/StripePaymentsPlugin.gradle" custom="true" type="gradleReference" />
+      <framework src="src/android/build-extras-stripe-payments.gradle" custom="true" type="gradleReference" />
 
       <source-file src="src/android/RetrofitFactory.java" target-dir="src/com/rolamix/plugins/stripe/" />
       <source-file src="src/android/StripePaymentConfig.java" target-dir="src/com/rolamix/plugins/stripe/" />
