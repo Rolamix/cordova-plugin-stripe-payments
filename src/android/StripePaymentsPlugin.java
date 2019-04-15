@@ -93,7 +93,7 @@ public class StripePaymentsPlugin extends CordovaPlugin {
     }
 
     @Override
-    protected void onNewIntent(Intent intent) {
+    public void onNewIntent(Intent intent) {
         super.onNewIntent(intent);
         if (intent.getData() != null && intent.getData().getQuery() != null) {
             // The client secret and source ID found here is identical to
@@ -118,7 +118,7 @@ public class StripePaymentsPlugin extends CordovaPlugin {
     }
 
     @Override
-    protected void onDestroy() {
+    public void onDestroy() {
         super.onDestroy();
         mPaymentSession.onDestroy();
     }
