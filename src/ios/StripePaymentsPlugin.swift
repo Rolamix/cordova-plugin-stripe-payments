@@ -198,7 +198,7 @@ import Stripe
             alertController.addAction(retry)
             self.viewController.present(alertController, animated: true, completion: nil)
         } else {
-            errorCallback(paymentStatusCallback, ["error": callbackMessage], keepCallback: true)
+            errorCallback(paymentStatusCallback, ["status": "PAYMENT_STATUS_ERROR", "error": callbackMessage], keepCallback: true)
         }
     }
 
