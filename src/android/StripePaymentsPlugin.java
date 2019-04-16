@@ -183,6 +183,8 @@ public class StripePaymentsPlugin extends CordovaPlugin {
         PaymentConfiguration.init(StripePluginConfig.getInstance().publishableKey);
         stripeInstance.setDefaultPublishableKey(StripePluginConfig.getInstance().publishableKey);
 
+        setupCustomerSession(null);
+
         message.put("status", "INIT_SUCCESS");
         message.remove("error");
         successCallback(callbackContext, StripePluginUtils.mapToJSON(message));
@@ -213,20 +215,24 @@ public class StripePaymentsPlugin extends CordovaPlugin {
 
         JSONObject headers = paymentConfig.optJSONObject("extraHTTPHeaders");
         StripePluginConfig.getInstance().extraHTTPHeaders = StripePluginUtils.parseExtraHeaders(headers, new HashMap<>());
-
-        setupCustomerSession();
-        setupPaymentSession();
-
         StripePaymentConfig.getInstance().price = paymentConfig.optLong("price", 0L);
         StripePaymentConfig.getInstance().currency = paymentConfig.optString("currency", "USD");
         StripePaymentConfig.getInstance().country = paymentConfig.optString("country", "US");
 
-        mPaymentSession.setCartTotal(StripePaymentConfig.getInstance().price);
-        mPaymentSession.presentPaymentMethodSelection();
+        setupCustomerSession(new CreateCustomerSessionListener() {
+            @Override
+            public void onKeyRetrieved(String key) {
+                // For now, we won't bother checking if key is null or non-null (error or not)
+                setupPaymentSession();
+                cordova.setActivityResultCallback(StripePaymentsPlugin.this);
+                mPaymentSession.setCartTotal(StripePaymentConfig.getInstance().price);
+                mPaymentSession.presentPaymentMethodSelection();
 
-        message.clear();
-        message.put("status", "PAYMENT_DIALOG_SHOWN");
-        successCallback(callbackContext, StripePluginUtils.mapToJSON(message));
+                message.clear();
+                message.put("status", "PAYMENT_DIALOG_SHOWN");
+                successCallback(callbackContext, StripePluginUtils.mapToJSON(message));
+            }
+        });
     }
 
     // Android does in 1 step what requires 2 steps on iOS. Android saves the payment method
@@ -311,7 +317,8 @@ public class StripePaymentsPlugin extends CordovaPlugin {
      *
      */
 
-    private void setupCustomerSession() {
+    private void setupCustomerSession(@Nullable  CreateCustomerSessionListener listener) {
+        CustomerSession.endCustomerSession();
         // CustomerSession only needs to be initialized once per app.
         CustomerSession.initCustomerSession(
             new StripePluginEphemeralKeyProvider(
@@ -322,6 +329,13 @@ public class StripePaymentsPlugin extends CordovaPlugin {
                             new AlertDialog.Builder(getApplicationContext())
                                     .setMessage(string)
                                     .show();
+                            if (listener != null) {
+                                listener.onKeyRetrieved(null);
+                            }
+                            return;
+                        }
+                        if (listener != null) {
+                            listener.onKeyRetrieved(string);
                         }
                     }
                 }));
@@ -451,6 +465,7 @@ public class StripePaymentsPlugin extends CordovaPlugin {
                                 // Once a 3DS Source is created, that is used
                                 // to initiate the third-party verification
                                 mRedirectSource = source;
+                                cordova.setActivityResultCallback(StripePaymentsPlugin.this);
                                 Intent browserIntent = new Intent(Intent.ACTION_VIEW, Uri.parse(source.getRedirect().getUrl()));
                                 getActivity().startActivity(browserIntent);
                             }
@@ -512,6 +527,10 @@ public class StripePaymentsPlugin extends CordovaPlugin {
         result.setKeepCallback(keepCallback);
         context.sendPluginResult(result);
         return result;
+    }
+
+    private interface CreateCustomerSessionListener {
+        void onKeyRetrieved(@Nullable String key);
     }
 
 }
