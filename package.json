@@ -1,7 +1,7 @@
 {
   "name": "cordova-plugin-stripe-payments",
   "description": "Stripe Card Entry plugin for Cordova. Available for Android and iOS.",
-  "version": "0.0.7",
+  "version": "0.0.8",
   "homepage": "https://github.com/rolamix/cordova-plugin-stripe-payments#readme",
   "author": "Rolamix <contact@rolamix.com> (https://rolamix.com)",
   "license": "MIT",
