@@ -82,7 +82,7 @@ import Stripe
             paymentContext.hostViewController = self.viewController
         }
 
-        customerContext.clearCachedCustomer()
+        customerContext.clearCache()
     }
 
 
@@ -235,19 +235,20 @@ import Stripe
         print("[StripePaymentsPlugin].paymentContextDidChange: \(resultMsg)")
         successCallback(paymentStatusCallback, resultMsg, keepCallback: true)
     }
-
+    
     // This callback is triggered when requestPayment() completes successfully to create a Source.
     // This Source can then be used by the app to process a payment (create a charge, subscription etc.)
-    func paymentContext(_ paymentContext: STPPaymentContext, didCreatePaymentResult paymentResult: STPPaymentResult, completion: @escaping STPErrorBlock) {
+    func paymentContext(_ paymentContext: STPPaymentContext, didCreatePaymentResult paymentResult: STPPaymentResult, completion: @escaping STPPaymentStatusBlock) {
         // Create charge using payment result
         let resultMsg: [String : Any] = [
             "status": "PAYMENT_CREATED",
-            "source": paymentResult.source.stripeID
+            "source": paymentResult.paymentMethod.stripeId
+            // "source": paymentResult.source.stripeID
         ]
 
         print("[StripePaymentsPlugin].paymentContext.didCreatePaymentResult: \(resultMsg)")
         successCallback(paymentStatusCallback, resultMsg, keepCallback: true)
-        completion(nil)
+        completion(STPPaymentStatus.success, nil)
     }
 
     // This callback triggers due to:
@@ -313,4 +314,3 @@ import Stripe
     }
 
 }
-
