@@ -248,6 +248,9 @@ import Stripe
 
         print("[StripePaymentsPlugin].paymentContext.didCreatePaymentResult: \(resultMsg)")
         successCallback(paymentStatusCallback, resultMsg, keepCallback: true)
+
+        // This is here to, for example, inform the context that the user canceled payment (if we were processing it
+        // from the native side). However we are not handling it here.
         completion(STPPaymentStatus.success, nil)
     }
 
