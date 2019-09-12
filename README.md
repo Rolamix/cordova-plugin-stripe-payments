@@ -3,8 +3,11 @@ Plugin for Cordova to use the [native android SDK](https://github.com/stripe/str
 
 ## Installing the plugin ##
 ```
-cordova plugin add cordova-plugin-filepickerio --save
+cordova plugin add cordova-plugin-stripe-payments --save
 ```
+
+### NOTE:
+This plugin now requires Cordova 9 as of version 0.1.1. If you are using Cordova 8 or lower, please use the 0.0.8 version of this plugin.
 
 ## Using the plugin ##
 
